@@ -1,84 +1,86 @@
-"use client"; // for Next.js App Router, ignore if using pages/
-
-import React, { useEffect, useState } from "react";
+"use client";
+import React, { useEffect, useState, useRef } from "react";
 import ReactSpeedometer from "react-d3-speedometer";
 
 const GeoSpeedometer = () => {
   const [speed, setSpeed] = useState(0);
-  const [lastPosition, setLastPosition] = useState(null);
-  const [lastTimestamp, setLastTimestamp] = useState(null);
+  const [error, setError] = useState(null);
+  const lastPositionRef = useRef(null);
 
   useEffect(() => {
     if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
+      setError("Geolocation is not supported");
       return;
     }
 
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        const timestamp = position.timestamp;
+    let watchId;
 
-        if (lastPosition) {
-          const distance = getDistanceFromLatLonInMeters(
-            lastPosition.latitude,
-            lastPosition.longitude,
-            latitude,
-            longitude
-          );
-          const timeDiff = (timestamp - lastTimestamp) / 1000; // in seconds
-          const calculatedSpeed =
-            timeDiff > 0 ? (distance / timeDiff) * 3.6 : 0; // m/s to km/h
-          setSpeed(Math.round(calculatedSpeed));
+    const updateSpeed = (position) => {
+      const { latitude, longitude } = position.coords;
+      const timestamp = position.timestamp;
+
+      const currentPos = { lat: latitude, lng: longitude, timestamp };
+
+      if (lastPositionRef.current) {
+        const prev = lastPositionRef.current;
+        const distance = getDistance(prev.lat, prev.lng, latitude, longitude);
+        const timeDiff = (timestamp - prev.timestamp) / 1000;
+
+        if (timeDiff > 0) {
+          const currentSpeed = (distance / timeDiff) * 3.6; // m/s to km/h
+          if (!isNaN(currentSpeed) && currentSpeed < 300) {
+            setSpeed(Math.round(currentSpeed));
+          }
         }
+      }
 
-        setLastPosition({ latitude, longitude });
-        setLastTimestamp(timestamp);
-      },
-      (error) => {
-        console.error("Error getting location", error);
+      lastPositionRef.current = currentPos;
+    };
+
+    watchId = navigator.geolocation.watchPosition(
+      updateSpeed,
+      (err) => {
+        console.log("Geo error:", err);
+        setError("Failed to get location");
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 5000,
+        maximumAge: 0,
+        timeout: 10000,
       }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [lastPosition, lastTimestamp]);
+  }, []);
 
-  // Haversine Formula to calculate distance in meters
-  function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
-    const R = 6371e3; // Earth radius in meters
+  function getDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371e3;
     const φ1 = (lat1 * Math.PI) / 180;
     const φ2 = (lat2 * Math.PI) / 180;
     const Δφ = ((lat2 - lat1) * Math.PI) / 180;
     const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
     const a =
       Math.sin(Δφ / 2) ** 2 +
       Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c; // in meters
+    return R * c;
   }
 
   return (
-    <div className=" w-full h-screen  flex flex-col justify-center items-center ">
-      <h2 className=" text-3xl md:text-4xl font-bold mb-16 ">
-        Live Speedometer
-      </h2>
+    <div className=" h-screen flex flex-col justify-center items-center ">
+      <h2 className=" mb-11 font-bold text-3xl ">Live GPS Speedometer</h2>
       <ReactSpeedometer
         maxValue={120}
         value={speed}
-        needleColor="blue"
+        needleColor="steelblue"
         startColor="green"
-        segments={10}
         endColor="red"
-        height={250}
+        segments={10}
+        height={200}
         currentValueText="Speed: ${value} km/h"
       />
+      <p>{`Speed: ${speed} km/h`}</p>
+      {error && <p style={{ color: "red" }}>{error}</p>}
     </div>
   );
 };
