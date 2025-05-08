@@ -4,10 +4,18 @@ import ReactSpeedometer from "react-d3-speedometer";
 
 const GeoSpeedometer = () => {
   const [speed, setSpeed] = useState(0);
+  const [totalDistance, setTotalDistance] = useState(0);
   const [error, setError] = useState(null);
+
   const wakeLockRef = useRef(null);
   const audioRef = useRef(null);
   const lastPositionRef = useRef(null);
+
+  //getting previous total distance from local storage
+  useEffect(() => {
+    const stored = localStorage.getItem("totalDistance");
+    stored ? setTotalDistance(parseFloat(stored)) : setTotalDistance(0);
+  }, []);
 
   // === 🛡️ Wake Lock Setup ===
   // useEffect(() => {
@@ -117,6 +125,12 @@ const GeoSpeedometer = () => {
           if (!isNaN(currentSpeed) && currentSpeed < 300) {
             setSpeed(Math.round(currentSpeed));
           }
+
+          if (!isNaN(distance) && distance < 1000) {
+            const newTotal = totalDistance + distance / 1000;
+            setTotalDistance(newTotal);
+            localStorage.setItem("totalDistance", newTotal.toFixed(3));
+          }
         }
       }
 
@@ -137,7 +151,7 @@ const GeoSpeedometer = () => {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
+  }, [totalDistance]);
 
   function getDistance(lat1, lon1, lat2, lon2) {
     const R = 6371e3;
@@ -153,7 +167,17 @@ const GeoSpeedometer = () => {
   }
 
   return (
-    <div className=" h-screen flex flex-col justify-center items-center ">
+    <div
+      className={` h-screen flex flex-col justify-center items-center ${
+        speed < 10
+          ? "bg-gray-100"
+          : speed < 40
+          ? "bg-green-300"
+          : speed < 65
+          ? "bg-yellow-100"
+          : "bg-rose-300"
+      } `}
+    >
       <h2 className=" mb-11 font-bold text-3xl ">Live GPS Speedometer</h2>
       <ReactSpeedometer
         maxValue={120}
@@ -166,7 +190,18 @@ const GeoSpeedometer = () => {
         currentValueText="Speed: ${value} km/h"
       />
       <p>{`Speed: ${speed} km/h`}</p>
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      <h3 className=" mt-5 ">
+        🚗 Total Distance: {totalDistance.toFixed(2)} km
+      </h3>
+      <button
+        onClick={() => {
+          setTotalDistance(0);
+        }}
+        className=" bg-black px-11 py-2.5 rounded-2xl shadow-2xl mt-7 text-white leading-relaxed font-semibold cursor-pointer "
+      >
+        Reset Distance
+      </button>
+      {error && <p className=" text-red-500 ">{error}</p>}
     </div>
   );
 };
