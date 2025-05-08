@@ -4,17 +4,35 @@ import ReactSpeedometer from "react-d3-speedometer";
 
 const GeoSpeedometer = () => {
   const [speed, setSpeed] = useState(0);
-  const [totalDistance, setTotalDistance] = useState(0);
   const [error, setError] = useState(null);
 
+  const [totalDistance, setTotalDistance] = useState(0);
+  const [maxSpeed, setMaxSpeed] = useState(0);
+  const [averageSpeed, setAverageSpeed] = useState(0);
+  const [startTime, setStartTime] = useState(null);
+  const [endTime, setEndTime] = useState(null);
+  const [duration, setDuration] = useState(0);
+
+  const intervalRef = useRef(null);
+  const positions = useRef([]);
   const wakeLockRef = useRef(null);
   const audioRef = useRef(null);
   const lastPositionRef = useRef(null);
 
   //getting previous total distance from local storage
   useEffect(() => {
-    const stored = localStorage.getItem("totalDistance");
-    stored ? setTotalDistance(parseFloat(stored)) : setTotalDistance(0);
+    const storedDistance = localStorage.getItem("totalDistance");
+    storedDistance
+      ? setTotalDistance(parseFloat(storedDistance))
+      : setTotalDistance(0);
+
+    const storedMaxSpeed = localStorage.getItem("maxspeed");
+    storedMaxSpeed ? setMaxSpeed(parseInt(storedMaxSpeed)) : setMaxSpeed(0);
+
+    const storedAverageSpeed = localStorage.getItem("averagespeed");
+    storedAverageSpeed
+      ? setAverageSpeed(parseInt(storedAverageSpeed))
+      : setAverageSpeed(0);
   }, []);
 
   // === 🛡️ Wake Lock Setup ===
@@ -115,15 +133,24 @@ const GeoSpeedometer = () => {
 
       const currentPos = { lat: latitude, lng: longitude, timestamp };
 
+      if (!startTime) setStartTime(new Date(timestamp));
+      setEndTime(new Date(timestamp));
+
       if (lastPositionRef.current) {
         const prev = lastPositionRef.current;
         const distance = getDistance(prev.lat, prev.lng, latitude, longitude);
         const timeDiff = (timestamp - prev.timestamp) / 1000;
 
-        if (timeDiff > 0) {
+        if (timeDiff > 0 && distance < 1000) {
           const currentSpeed = (distance / timeDiff) * 3.6; // m/s to km/h
           if (!isNaN(currentSpeed) && currentSpeed < 300) {
             setSpeed(Math.round(currentSpeed));
+
+            if (currentSpeed > maxSpeed) {
+              setMaxSpeed(Math.round(currentSpeed));
+              localStorage.setItem("maxspeed", currentSpeed);
+            }
+            positions.current.push({ speed: currentSpeed, time: timestamp });
           }
 
           if (!isNaN(distance) && distance < 1000) {
@@ -151,8 +178,26 @@ const GeoSpeedometer = () => {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [totalDistance]);
+  }, [totalDistance, maxSpeed, startTime]);
 
+  // Duration + Avg Speed
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      if (startTime && endTime) {
+        const diff = (endTime - startTime) / 1000;
+        setDuration(diff);
+
+        const speeds = positions.current.map((p) => p.speed);
+        const avg = speeds.reduce((a, b) => a + b, 0) / (speeds.length || 1);
+        setAverageSpeed(Math.round(avg));
+        localStorage.setItem("averagespeed", avg);
+      }
+    }, 1000);
+
+    return () => clearInterval(intervalRef.current);
+  }, [startTime, endTime]);
+
+  // Distance Calculation
   function getDistance(lat1, lon1, lat2, lon2) {
     const R = 6371e3;
     const φ1 = (lat1 * Math.PI) / 180;
@@ -166,6 +211,19 @@ const GeoSpeedometer = () => {
     return R * c;
   }
 
+  // Reset Button
+  const handleReset = () => {
+    setSpeed(0);
+    setTotalDistance(0);
+    setMaxSpeed(0);
+    setAverageSpeed(0);
+    setStartTime(null);
+    setEndTime(null);
+    setDuration(0);
+    positions.current = [];
+    lastPositionRef.current = null;
+  };
+
   return (
     <div
       className={` h-screen flex flex-col justify-center items-center ${
@@ -174,8 +232,8 @@ const GeoSpeedometer = () => {
           : speed < 40
           ? "bg-green-300"
           : speed < 65
-          ? "bg-yellow-100"
-          : "bg-rose-300"
+          ? "bg-yellow-100 "
+          : "bg-rose-400 text-white "
       } `}
     >
       <h2 className=" mb-11 font-bold text-3xl ">Live GPS Speedometer</h2>
@@ -190,17 +248,38 @@ const GeoSpeedometer = () => {
         currentValueText="Speed: ${value} km/h"
       />
       <p>{`Speed: ${speed} km/h`}</p>
-      <h3 className=" mt-5 ">
-        🚗 Total Distance: {totalDistance.toFixed(2)} km
-      </h3>
+
+      <div style={{ marginTop: "1rem", textAlign: "left" }}>
+        <h3>
+          <strong>🕒 Start Time:</strong>{" "}
+          {startTime ? startTime.toLocaleTimeString() : "—"}
+        </h3>
+        <h3>
+          <strong>🏁 End Time:</strong>{" "}
+          {endTime ? endTime.toLocaleTimeString() : "—"}
+        </h3>
+        <h3>
+          <strong>⏳ Duration:</strong>{" "}
+          {duration ? Math.floor(duration) + " sec" : "—"}
+        </h3>
+        <h3>
+          <strong>📈 Avg Speed:</strong> {averageSpeed} km/h
+        </h3>
+        <h3>
+          <strong>🚀 Max Speed:</strong> {maxSpeed} km/h
+        </h3>
+        <h3>
+          <strong>📍 Total Distance:</strong> {totalDistance.toFixed(2)} km
+        </h3>
+      </div>
+
       <button
-        onClick={() => {
-          setTotalDistance(0);
-        }}
+        onClick={handleReset}
         className=" bg-black px-11 py-2.5 rounded-2xl shadow-2xl mt-7 text-white leading-relaxed font-semibold cursor-pointer "
       >
-        Reset Distance
+        🔄 Reset Trip
       </button>
+
       {error && <p className=" text-red-500 ">{error}</p>}
     </div>
   );
